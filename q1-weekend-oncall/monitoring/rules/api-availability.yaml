@@ -1,0 +1,10 @@
+groups:
+  - name: api-availability
+    rules:
+      - alert: APIHighErrorRate
+        expr: |
+          sum(rate(http_requests_total{job="api-gateway",code=~"5.."}[2m]))
+            / sum(rate(http_requests_total{job="api-gateway"}[2m])) > 0.005
+        for: 2m
+        labels: {severity: critical}
+        annotations: {summary: "API 5xx above 0.5% for 2m"}

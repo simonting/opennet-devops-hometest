@@ -1,0 +1,8 @@
+groups:
+  - name: api-latency
+    rules:
+      - alert: APILatencyP99
+        expr: histogram_quantile(0.99, sum by (le) (rate(http_request_duration_seconds_bucket{job="api-gateway"}[5m]))) > 1.5
+        for: 5m
+        labels: {severity: warning}
+        annotations: {summary: "API p99 above 1.5s"}

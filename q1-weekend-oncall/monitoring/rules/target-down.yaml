@@ -1,0 +1,8 @@
+groups:
+  - name: target-down
+    rules:
+      - alert: TargetDown
+        expr: up == 0
+        for: 5m
+        labels: {}          # no severity
+        annotations: {summary: "{{ $labels.job }} target down"}

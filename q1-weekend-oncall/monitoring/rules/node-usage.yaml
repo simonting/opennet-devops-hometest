@@ -1,0 +1,8 @@
+groups:
+  - name: node-usage
+    rules:
+      # depends on a recording rule
+      - alert: NodeMemoryPressure
+        expr: instance:node_memory_utilisation:ratio > 0.9
+        for: 10m
+        labels: {severity: warning}

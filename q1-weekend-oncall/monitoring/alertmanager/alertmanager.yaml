@@ -1,0 +1,26 @@
+route:
+  receiver: slack-sre-alert          # catch-all
+  group_by: [alertname, cluster]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  routes:
+    - matchers: [severity = critical]
+      receiver: pager
+      continue: true
+    - matchers: [severity = critical]
+      receiver: slack-sre-alert
+    - matchers: [team = media]
+      receiver: slack-media
+    - matchers: [severity = warning]
+      receiver: slack-sre-alert
+    # NOTE(2025-11): several alerts carry no severity label at all;
+    # they fall through to the catch-all. Nobody has audited which.
+
+receivers:
+  - name: pager
+    webhook_configs: [{url: "https://pager.example/v1/hook"}]
+  - name: slack-sre-alert
+    slack_configs: [{channel: "#sre-alert"}]
+  - name: slack-media
+    slack_configs: [{channel: "#media-alerts"}]

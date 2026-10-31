@@ -1,0 +1,7 @@
+groups:
+  - name: pod-restarts
+    rules:
+      - alert: PodRestartingTooOften
+        expr: increase(kube_pod_container_status_restarts_total[1h]) > 3
+        labels: {severity: warning}
+        # fires per pod; no namespace/service filter

@@ -1,0 +1,7 @@
+groups:
+  - name: stream-health
+    rules:
+      - alert: StreamSegmentStale
+        expr: time() - stream_last_segment_timestamp_seconds > 30
+        for: 1m
+        labels: {severity: warning, team: media}
