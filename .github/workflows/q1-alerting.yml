@@ -15,7 +15,7 @@ jobs:
           curl -sSfL https://github.com/prometheus/prometheus/releases/download/v3.5.0/prometheus-3.5.0.linux-amd64.tar.gz | tar xz
           curl -sSfL https://github.com/prometheus/alertmanager/releases/download/v0.28.1/alertmanager-0.28.1.linux-amd64.tar.gz | tar xz
       - name: Check rules, rule tests, Alertmanager config and routing
-        run: q1-weekend-oncall/monitoring/check.sh
+        run: bash q1-weekend-oncall/monitoring/check.sh
         env:
           PROMTOOL: ${{ github.workspace }}/prometheus-3.5.0.linux-amd64/promtool
           AMTOOL: ${{ github.workspace }}/alertmanager-0.28.1.linux-amd64/amtool
