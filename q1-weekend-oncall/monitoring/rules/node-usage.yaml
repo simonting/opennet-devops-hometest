@@ -1,8 +1,27 @@
 groups:
   - name: node-usage
     rules:
-      # depends on a recording rule
+      # Was `instance:node_memory_utilisation:ratio > 0.9`. That recording rule was
+      # deleted in the June stack migration ("drop legacy kube-prometheus recording
+      # rules"), so this expression has returned nothing and the alert has not been
+      # able to fire since June. Use the raw node-exporter series instead, so the
+      # alert no longer depends on a recording rule that can be renamed under it.
       - alert: NodeMemoryPressure
-        expr: instance:node_memory_utilisation:ratio > 0.9
+        expr: 1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) > 0.9
         for: 10m
         labels: {severity: warning}
+        annotations:
+          summary: "{{ $labels.instance }} memory above 90% for 10m"
+
+      # kubelet sets MemoryPressure once it reaches its eviction threshold, i.e. pods
+      # are being evicted. This is what started the 2026-08-22 incident (restart storm
+      # at 14:02, page only at 14:31 from 5xx), and it was the third memory-driven
+      # weekend eviction storm in August. Pages because the action is known and it
+      # leads to user-facing 5xx within ~30 min.
+      - alert: NodesUnderMemoryPressure
+        expr: count(kube_node_status_condition{condition="MemoryPressure",status="true"} == 1) >= 2
+        for: 5m
+        labels: {severity: critical}
+        annotations:
+          summary: "{{ $value }} nodes under kubelet MemoryPressure (pods being evicted)"
+          runbook: "Scale the node group first (2026-08-22: +4 nodes stopped the evictions, 5xx recovered 8 min later). Restart storms in this cluster are a symptom; do not start by rolling back deploys. Then look for pods using far more memory than they request (2026-08-22 suspect: data team batch job, Saturdays 13:30)."

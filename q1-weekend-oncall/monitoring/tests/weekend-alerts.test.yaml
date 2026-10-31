@@ -1,0 +1,113 @@
+# promtool test rules tests/weekend-alerts.test.yaml
+# Unit tests for the alerts changed after the 2026-08-22 incident. Each case is a
+# situation from that day or from the August ops tickets.
+rule_files:
+  - ../rules/node-usage.yaml
+  - ../rules/pod-restarts.yaml
+  - ../rules/payments-lag.yaml
+
+evaluation_interval: 1m
+
+tests:
+  # NodeMemoryPressure must evaluate against raw node-exporter series. Against the
+  # old rule (recording-rule dependency) this test fails: that is the dead alert.
+  - name: node memory at 95% fires NodeMemoryPressure
+    interval: 1m
+    input_series:
+      - series: 'node_memory_MemAvailable_bytes{instance="n1"}'
+        values: '5x30'
+      - series: 'node_memory_MemTotal_bytes{instance="n1"}'
+        values: '100x30'
+      - series: 'node_memory_MemAvailable_bytes{instance="n2"}'
+        values: '50x30'
+      - series: 'node_memory_MemTotal_bytes{instance="n2"}'
+        values: '100x30'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: NodeMemoryPressure
+        exp_alerts: []                       # still inside `for: 10m`
+      - eval_time: 15m
+        alertname: NodeMemoryPressure
+        exp_alerts:
+          - exp_labels: {severity: warning, instance: n1}
+            exp_annotations: {summary: "n1 memory above 90% for 10m"}
+
+  - name: two nodes evicting pages, one node does not
+    interval: 1m
+    input_series:
+      - series: 'kube_node_status_condition{node="n1",condition="MemoryPressure",status="true"}'
+        values: '1x30'
+      - series: 'kube_node_status_condition{node="n2",condition="MemoryPressure",status="true"}'
+        values: '0x9 1x20'                   # n2 joins at minute 10
+      - series: 'kube_node_status_condition{node="n3",condition="MemoryPressure",status="true"}'
+        values: '0x30'
+    alert_rule_test:
+      - eval_time: 9m
+        alertname: NodesUnderMemoryPressure
+        exp_alerts: []
+      - eval_time: 16m
+        alertname: NodesUnderMemoryPressure
+        exp_alerts:
+          - exp_labels: {severity: critical}
+            exp_annotations:
+              summary: "2 nodes under kubelet MemoryPressure (pods being evicted)"
+              runbook: "Scale the node group first (2026-08-22: +4 nodes stopped the evictions, 5xx recovered 8 min later). Restart storms in this cluster are a symptom; do not start by rolling back deploys. Then look for pods using far more memory than they request (2026-08-22 suspect: data team batch job, Saturdays 13:30)."
+
+  # 2026-08-22 14:02: ~40 restarting pods across namespaces. One alert per namespace.
+  - name: restart storm collapses to one alert per namespace
+    interval: 1m
+    input_series:
+      - series: 'kube_pod_container_status_restarts_total{namespace="api",pod="api-1",container="app"}'
+        values: '0+1x60'
+      - series: 'kube_pod_container_status_restarts_total{namespace="api",pod="api-2",container="app"}'
+        values: '0+1x60'
+      - series: 'kube_pod_container_status_restarts_total{namespace="api",pod="api-3",container="app"}'
+        values: '0+1x60'
+      - series: 'kube_pod_container_status_restarts_total{namespace="risk",pod="risk-1",container="app"}'
+        values: '0+2x60'
+      - series: 'kube_pod_container_status_restarts_total{namespace="quiet",pod="q-1",container="app"}'
+        values: '0 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1'   # one crash
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: PodRestartingTooOften
+        exp_alerts:
+          - exp_labels: {severity: warning, namespace: api}
+            exp_annotations: {summary: "Pods in api restarting (worst pod: 30 restarts/1h)"}
+          - exp_labels: {severity: warning, namespace: risk}
+            exp_annotations: {summary: "Pods in risk restarting (worst pod: 60 restarts/1h)"}
+
+  # 2026-08-22 15:40: backlog high but draining paged. Must not page now.
+  - name: draining backlog does not page
+    interval: 1m
+    input_series:
+      - series: 'payments_queue_depth{queue="payments"}'
+        values: '40000-200x90'               # 40000 falling to 22000
+    alert_rule_test:
+      - eval_time: 60m
+        alertname: PaymentsQueueBacklogGrowing
+        exp_alerts: []
+
+  - name: growing backlog pages
+    interval: 1m
+    input_series:
+      - series: 'payments_queue_depth{queue="payments"}'
+        values: '9000+100x90'
+    alert_rule_test:
+      - eval_time: 60m
+        alertname: PaymentsQueueBacklogGrowing
+        exp_alerts:
+          - exp_labels: {severity: critical, queue: payments}
+            exp_annotations: {summary: "Payments queue depth 15000 and not draining for 15m"}
+
+  # Stuck consumer (OPS-331/337 pattern): depth flat above threshold must still page.
+  - name: stuck flat backlog pages
+    interval: 1m
+    input_series:
+      - series: 'payments_queue_depth{queue="payments"}'
+        values: '20000x90'
+    alert_rule_test:
+      - eval_time: 60m
+        alertname: PaymentsQueueBacklogGrowing
+        exp_alerts:
+          - exp_labels: {severity: critical, queue: payments}
+            exp_annotations: {summary: "Payments queue depth 20000 and not draining for 15m"}

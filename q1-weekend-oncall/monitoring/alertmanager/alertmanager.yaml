@@ -1,21 +1,46 @@
+global:
+  # The excerpt had no Slack URL and `amtool check-config` rejects it without one.
+  # Placeholder path for the webhook secret the live config already uses.
+  slack_api_url_file: /etc/alertmanager/secrets/slack-webhook-url
+
 route:
   receiver: slack-sre-alert          # catch-all
   group_by: [alertname, cluster]
   group_wait: 30s
   group_interval: 5m
-  repeat_interval: 4h
+  # Was 4h. A warning that fires all weekend was re-posted ~13 times in 48h; a dozen
+  # or so long-running warning groups add up to most of the 214 weekend messages.
+  # Slack-only alerts now get one reminder a day. Pages keep 4h (set below).
+  repeat_interval: 24h
   routes:
+    # Moved to the top. Below the critical routes, a critical team=media alert went
+    # to the SRE pager and stopped there, never reaching #media-alerts.
+    # Media asked for "every 10s while a stream is down". This re-notifies every 5m
+    # while firing and posts when it resolves; see DECISION.md for why not 10s.
+    - matchers: [team = media]
+      receiver: slack-media
+      group_wait: 10s
+      group_interval: 1m
+      repeat_interval: 5m
     - matchers: [severity = critical]
       receiver: pager
+      repeat_interval: 4h
       continue: true
     - matchers: [severity = critical]
       receiver: slack-sre-alert
-    - matchers: [team = media]
-      receiver: slack-media
+      repeat_interval: 4h
     - matchers: [severity = warning]
       receiver: slack-sre-alert
     # NOTE(2025-11): several alerts carry no severity label at all;
     # they fall through to the catch-all. Nobody has audited which.
+
+inhibit_rules:
+  # While a cluster is evicting pods, its restart storm and node memory warnings are
+  # symptoms of the page that already went out. On 2026-08-22 ~40 of them led the
+  # on-call to mute #sre-alert at 14:05.
+  - source_matchers: [alertname = NodesUnderMemoryPressure]
+    target_matchers: ['alertname =~ "PodRestartingTooOften|NodeMemoryPressure"']
+    equal: [cluster]
 
 receivers:
   - name: pager
@@ -23,4 +48,7 @@ receivers:
   - name: slack-sre-alert
     slack_configs: [{channel: "#sre-alert"}]
   - name: slack-media
-    slack_configs: [{channel: "#media-alerts"}]
+    slack_configs:
+      - channel: "#media-alerts"
+        send_resolved: true
+        text: "<!here> {{ .CommonLabels.alertname }}: {{ .Alerts.Firing | len }} streams stale"

@@ -1,7 +1,12 @@
 groups:
   - name: pod-restarts
     rules:
+      # Was per pod with no `for`: every restarting pod became its own alert, and one
+      # crash was enough to notify. Same per-pod threshold, but one alert per
+      # namespace, and it has to persist for 15m.
       - alert: PodRestartingTooOften
-        expr: increase(kube_pod_container_status_restarts_total[1h]) > 3
+        expr: max by (namespace) (increase(kube_pod_container_status_restarts_total[1h])) > 3
+        for: 15m
         labels: {severity: warning}
-        # fires per pod; no namespace/service filter
+        annotations:
+          summary: "Pods in {{ $labels.namespace }} restarting (worst pod: {{ $value | printf \"%.0f\" }} restarts/1h)"

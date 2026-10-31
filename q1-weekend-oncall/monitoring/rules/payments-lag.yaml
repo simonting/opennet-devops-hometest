@@ -1,7 +1,16 @@
 groups:
   - name: payments-lag
     rules:
+      # Was `avg_over_time(payments_queue_depth[6h]) > 10000`. Local retention is 3h,
+      # so that was really a ~3h average, and it measured "was high recently", not
+      # "growing". It paged at 15:40 on 2026-08-22 while the backlog was draining.
+      # Now: above threshold AND not draining (growing or stuck flat, e.g. a stuck
+      # consumer). The 10000 threshold is kept: there is no payments SLO to derive one.
       - alert: PaymentsQueueBacklogGrowing
-        expr: avg_over_time(payments_queue_depth[6h]) > 10000
-        for: 30m
+        expr: |
+          payments_queue_depth > 10000
+            and deriv(payments_queue_depth[15m]) >= 0
+        for: 15m
         labels: {severity: critical}
+        annotations:
+          summary: "Payments queue depth {{ $value }} and not draining for 15m"

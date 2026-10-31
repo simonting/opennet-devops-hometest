@@ -1,0 +1,21 @@
+name: q1-alerting
+on:
+  pull_request:
+    paths: ['q1-weekend-oncall/monitoring/**']
+  push:
+    branches: [main]
+    paths: ['q1-weekend-oncall/monitoring/**']
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install promtool and amtool
+        run: |
+          curl -sSfL https://github.com/prometheus/prometheus/releases/download/v3.5.0/prometheus-3.5.0.linux-amd64.tar.gz | tar xz
+          curl -sSfL https://github.com/prometheus/alertmanager/releases/download/v0.28.1/alertmanager-0.28.1.linux-amd64.tar.gz | tar xz
+      - name: Check rules, rule tests, Alertmanager config and routing
+        run: q1-weekend-oncall/monitoring/check.sh
+        env:
+          PROMTOOL: ${{ github.workspace }}/prometheus-3.5.0.linux-amd64/promtool
+          AMTOOL: ${{ github.workspace }}/alertmanager-0.28.1.linux-amd64/amtool
