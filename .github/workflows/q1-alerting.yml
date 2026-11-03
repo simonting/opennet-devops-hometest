@@ -1,10 +1,11 @@
 name: q1-alerting
 on:
   pull_request:
-    paths: ['q1-weekend-oncall/monitoring/**']
+    paths: ['q1-weekend-oncall/monitoring/**', '.github/workflows/q1-alerting.yml']
   push:
     branches: [main]
-    paths: ['q1-weekend-oncall/monitoring/**']
+    paths: ['q1-weekend-oncall/monitoring/**', '.github/workflows/q1-alerting.yml']
+  workflow_dispatch:
 jobs:
   check:
     runs-on: ubuntu-latest
